@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ML artifacts
+models/*.pkl
+models/*.joblib
+mlruns/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,21 @@
+# Core
+pandas>=2.0
+numpy>=1.24
+
+# DB
+psycopg2-binary>=2.9
+
+# ML
+scikit-learn>=1.4
+xgboost>=2.0
+
+# Day 2+ 會用到
+lightgbm>=4.0
+catboost>=1.2
+imbalanced-learn>=0.12
+optuna>=4.0
+shap>=0.45
+
+# Day 5
+streamlit>=1.30
+plotly>=5.18
