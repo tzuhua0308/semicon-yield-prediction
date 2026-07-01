@@ -32,8 +32,8 @@
 ## 🗺️ Roadmap
 
 - [x] **Day 1**(6/29):Baseline XGBoost — F1 = 0.00, AUC = 0.74(展示「Majority Class Predictor」陷阱)
-- [ ] **Day 2**:特徵工程(去除 NULL>80% 感測器、中位數補缺、mutual_info 特徵選擇)+ SMOTE 平衡
-- [ ] **Day 3**:四模型對戰(RF / XGBoost / LightGBM / CatBoost)
+- [x] **Day 2**(7/1):特徵清理 + mutual_info 選特徵 + OOF threshold tuning → **F1 = 0.17 (test) / 0.26 (5-fold OOF)**
+- [ ] **Day 3**:四模型對戰(RF / XGBoost / LightGBM / CatBoost)+ SMOTE 加碼
 - [ ] **Day 4**:Optuna 貝氏調參 + SHAP 可解釋性(找出 Top 10 影響良率的感測器)
 - [ ] **Day 5**:Streamlit Demo(輸入感測器值 → 即時 Pass/Fail 預測)
 - [ ] **Day 6-7**:README 完善、截圖、推 GitHub
@@ -62,7 +62,60 @@ Accuracy  : 93%      ⚠️ 假象(因為猜全部 Pass 就有 93%)
 3. **這是業界的 "Yield Excursion early warning" 痛點** — Fail 樣本天生稀少,
    是不平衡學習(Imbalanced Learning)的經典場景。
 
-Day 2 會用 **SMOTE + Feature Selection + Threshold Tuning** 把 F1 拉到 ~0.30+。
+Day 2 用 **Feature Selection + Threshold Tuning** 把 F1 從 0 拉起來。
+
+---
+
+## 📈 Day 2 改良結果
+
+跑法:`python src/02_improved.py`(同一組 train/test split、同一批 XGBoost 參數,只加清洗與調閾值)。
+
+```
+── Baseline (Day 1) ────────────────────
+Confusion Matrix:
+              預測 Pass   預測 Fail
+實際 Pass       291         2
+實際 Fail        21         0    ← 抓到 0 個
+F1 = 0.0000  AUC = 0.7395  threshold = 0.5
+
+── Improved (Day 2) ────────────────────
+Confusion Matrix:
+              預測 Pass   預測 Fail
+實際 Pass       282        11
+實際 Fail        18         3    ← 抓到 3 個(baseline 抓 0 個)
+F1 (test)     = 0.1714
+F1 (5-fold OOF) = 0.2642   ← 更穩的估計
+AUC          = 0.7549  threshold = 0.120
+```
+
+### 四刀齊下、每一步做什麼
+
+| # | 步驟 | 效果 |
+|---|---|---|
+| 1 | 砍 NaN ≥ 50% 的感測器 | 590 → 566 欄 |
+| 2 | Median 補缺(fit 只用 train) | 消除 NaN 影響 mutual_info |
+| 3 | VarianceThreshold 砍近常數欄 | 566 → 440 欄 |
+| 4 | `mutual_info_classif` Top-50 | 440 → 50 欄,把噪音欄濾掉 |
+| 5 | `scale_pos_weight = 14` | 沿用 Day 1,不平衡加權 |
+| 6 | 5-fold StratifiedKFold 拿 OOF 機率 | 避免用單一 split 選 threshold 過擬合 |
+| 7 | 掃 threshold 找最佳 F1 | **0.50 → 0.12**(真正的功臣) |
+
+### 為什麼 Day 1 baseline F1 = 0?
+
+不是模型爛(AUC 0.74 表示排序能力還在),是 **threshold = 0.5 對這種 14 : 1 不平衡不合理**。
+XGBoost 的 `predict_proba` 在少數類上普遍給低機率(即使有 `scale_pos_weight`),用 0.5 切下去大部分 Fail 就被漏掉了。
+Day 2 用 OOF 機率掃出 F1 最佳切點 = **0.12**,才把「模型其實有訊號但一個都沒抓到」的窘境救回來。
+
+### 為什麼 test F1 (0.17) 比 OOF F1 (0.26) 低?
+
+Test set 只有 **21 個 Fail 樣本**,多抓 / 漏抓一個就會讓 F1 抖動 ~5%。
+5-fold OOF 用了 train 全部 83 個 Fail 樣本,是**更穩的估計**,面試 demo 時應該以 OOF 為主。
+
+### Day 3 想試什麼
+
+- SMOTE 是不是能贏過 `scale_pos_weight`?
+- LightGBM / CatBoost 對高維稀疏 + 不平衡是不是更擅長?
+- 保留 Top 100 / 全欄看訊號會不會被稀釋?
 
 ---
 
@@ -71,8 +124,9 @@ Day 2 會用 **SMOTE + Feature Selection + Threshold Tuning** 把 F1 拉到 ~0.3
 ```
 semicon-yield-prediction/
 ├── src/
-│   └── 01_baseline.py        Day 1: XGBoost baseline,連 PostgreSQL
-├── notebooks/                Day 2+ 探索式分析
+│   ├── 01_baseline.py        Day 1: XGBoost baseline,連 PostgreSQL
+│   └── 02_improved.py        Day 2: 特徵清理 + OOF threshold tuning
+├── notebooks/                Day 3+ 探索式分析
 ├── models/                   訓練好的模型(gitignore)
 ├── docs/                     截圖、論文筆記
 ├── requirements.txt
@@ -88,12 +142,13 @@ semicon-yield-prediction/
 先把 [semicon-yield-dashboard](https://github.com/tzuhua0308/semicon-yield-dashboard)
 裡的 SECOM 資料載入 PostgreSQL(那邊的 README 有完整步驟)。
 
-### 跑 Baseline
+### 跑 Baseline 與 Day 2 改良版
 ```bash
 git clone https://github.com/tzuhua0308/semicon-yield-prediction
 cd semicon-yield-prediction
 pip install -r requirements.txt
-python src/01_baseline.py
+python src/01_baseline.py     # Day 1:F1 = 0.00
+python src/02_improved.py     # Day 2:F1 = 0.17 (test) / 0.26 (OOF)
 ```
 
 ---
